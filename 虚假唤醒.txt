@@ -1,0 +1,18 @@
+指的是下面这种情况：
+
+if(list.empty()) {
+    cond.await();
+}
+....//pop a member from list and handle it
+
+但是有可能发生这样的情况：
+1、list为empty，进入await
+2、list不为empty了，唤醒了正在等待list的线程，此时唤醒的可能不止一个
+3、其中某条线程处理了list的member，于是list再次为empty
+4、其它线程继续处理时，list又已经为empty了，这次唤醒是无效的
+
+解决方案：只要将if检测改为while检测就可以了。
+while(list.empty) {
+    cond.await();
+}
+....//pop a member from list and handle it
