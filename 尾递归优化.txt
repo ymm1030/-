@@ -1,0 +1,57 @@
+1、尾调用
+function f(x) {
+  if (x > 0) {
+    return m(x)
+  }
+  return n(x);
+}
+
+上面代码中，m和n的调用都属于尾调用。由于f函数在调用m和n后直接结束，没有额外的操作，比如对m和n的返回值求+1的结果等，因此f的调用栈可以不保存，直接进入m或者n的调用栈，这样可以节省大量的调用栈开销。
+
+2、尾递归
+function factorial(n) {
+  if (n === 1) return 1;
+  return n * factorial(n - 1);
+}
+这个常见的实现方式，不能做尾递归优化，因为最后的递归操作结果，需要对它进行求值（乘以n）。
+可以修改为可以优化的形式：
+function factorial(n, total) {
+  if (n === 1) return total;
+  return factorial(n - 1, n * total);
+}
+由于函数最末只需要获得另一个函数的返回值（在递归中另一个函数也是调用函数本身），因此这里可以执行尾调用优化，无需保存本次调用的调用栈。
+
+3、递归的改写
+尾递归的实现，往往需要改写递归函数，确保最后一步只调用自身。做到这一点的方法，就是把所有用到的内部变量改写成函数的参数。比如上面的例子，阶乘函数 factorial 需要用到一个中间变量 total ，那就把这个中间变量改写成函数的参数。这样做的缺点就是不太直观，第一眼很难看出来，为什么计算5的阶乘，需要传入两个参数5和1？
+两个方法可以解决这个问题。方法一是在尾递归函数之外，再提供一个正常形式的函数。
+function tailFactorial(n, total) {
+  if (n === 1) return total;
+  return tailFactorial(n - 1, n * total);
+}
+
+function factorial(n) {
+  return tailFactorial(n, 1);
+}
+
+函数式编程有一个概念，叫做柯里化（currying），意思是将多参数的函数转换成单参数的形式。这里也可以使用柯里化。
+function currying(fn, n) {
+  return function (m) {
+    return fn.call(this, m, n);
+  };
+}
+
+function tailFactorial(n, total) {
+  if (n === 1) return total;
+  return tailFactorial(n - 1, n * total);
+}
+
+const factorial = currying(tailFactorial, 1); //factorial就是最终的递归函数
+factorial(5);
+
+第二种方法就是采用参数默认值：
+function factorial(n, total = 1) {
+  if (n === 1) return total;
+  return factorial(n - 1, n * total);
+}
+factorial(5);
+总结一下，递归本质上是一种循环操作。纯粹的函数式编程语言没有循环操作命令，所有的循环都用递归实现，这就是为什么尾递归对这些语言极其重要。对于其他支持"尾调用优化"的语言（比如Lua，ES6），只需要知道循环可以用递归代替，而一旦使用递归，就最好使用尾递归。
