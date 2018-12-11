@@ -1,0 +1,50 @@
+在std::thread、std::bind、std::packaged_task等传参时，如果需要传引用，需要使用std::ref(...)，如果需要传const引用，需要使用std::cref(...)
+
+std::thread接受一个callable对象作为启动routine，所需的参数依次传入，并且构造完成直接执行。
+std::this_thread::... 可以直接调用到本线程的方法。比如std::this_thread::sleep_for(...)
+线程内调用yield()可以给os一个调度信号，表示“当前线程目前可以被切掉”
+
+时间可以用std::chrono的定义。比如2秒：std::chrono::seconds(2)
+
+std::function对象是一个闭包，可以保存上下文。尽量使用std::function。
+
+std::bind可以打包出一个std::function对象。可以填入参数可以暂时不填入参数，等到调用时再传参。如果不填入参数的话，可以用std::placeholders::_1, std::placeholders::_2...来占位。注意这是有序的。
+
+std::packaged_task也可以打包一个闭包对象，用来进行异步运行。package_task对象暂时不传的参数可以直接不传，不需要占位符。从package_task中可以使用get_future取得一个future对象，可以异步获得运行结果。同时因为packaged_task对象是一个callable，可以直接构造std::thread对象并运行。std::packaged_task需要使用模板，模板参数是其callable参数的原型，比如std::packaged_task<int(int, int)> task(add, 1, 2);构建了一个add的task。
+从std::packaged_task中可以通过get_future取得一个future对象，实现异步数据同步。packaged_task有routine，可以启动thread，如果不需要routine的话，可以使用简易版的std::promise，只要简单的set_value即可，使用get_future取得的future同样可以取得这个value。（如果在未set_value前就使用future的get，那么会导致block）。
+
+mutex的类型：
+std::mutex    标准mutex，使用std::lock_guard
+std::timed_mutex 在获取时可以指定超时的mutex
+std::recursive_mutex    可以嵌套获取的mutex，嵌套时需要释放相同的次数。
+std::recursive_timed_mutex   结合前两者的优点
+std::shared_mutex(c++17)    可以同时获取多次的mutex，sample是多个读线程，一个写线程，读线程应当使用std::shared_lock(C++14)，写线程使用std::unique_lock
+std::shared_timed_mutex(c++14) 可以share同时可以指定超时的mutex
+
+RAII lock辅助：
+std::lock_guard    标准lock，只能使用tag std::adopt_lock
+std::unique_lock   灵活型lock。 可以使用所有tag。 由于可以构造时不锁，因此还有额外的lock等方法。owns_lock可以知道是否成功上锁，与operator bool功能相同。
+std::shared_lock   可以共享的lock，配合shared_mutex使用。
+std::scoped_lock(C++17)  可以同时锁多个。解锁的时候按照相反的顺序。如果同时锁多个，会应用和std::lock一样的防死锁算法。
+
+lock tag，使用在上述lock辅助对象的最后一个构造参数
+std::defer_lock 不获取lock
+std::try_to_lock 尝试获取lock, 但是不阻塞
+std::adopt_lock  假设已经获得lock（不再尝试获取lock)
+
+std::async  简易、快速的异步策略。可以省去packaged_task打包，取得future，或者使用promise，取得future同步的过程。可以一步到位直接执行routine。会自行判断是否启动新的线程，一定程度上减少自行判断的工作。第一个参数可以指定std::launch::async或者std::launch::deferred, 分别表示是立即执行还是推迟执行。推迟执行的话，直到调用future的get才会开始执行。
+
+std::future
+获取future结果有三种方式，get, wait, wait_for， get等待结果，wait等待完成，wait_for可以指定超时。返回后可以取得std::future_status，deferred表示是推迟执行，还没开始，timeout表示操作超时，ready表示操作已完成（可以取值）
+std::shared_future，copyable，可以使得多个线程同时等待一个future。std::shared_future可以由普通的future创建而来。
+
+std::once_flag和std::call_once配合可以使得一个routine只被调用一次。具体方式是先定义一个std::once_flag对象，然后将该对象作为std::call_once的第一个参数（后续参数分别是routine和routine的参数),那么这个call_once调用只会被调用一次，并且线程安全。（简单的原子操作封装)
+
+std::condition_variable wait只能接受std::unique_lock
+是pthread_cond_xxx的封装。可以通过对同一个变量的简单的wait和notify_xxx操作来选择唤醒一个或多个线程。一般情况下，在wait前会使用std::unique_lock来获取全局锁。
+注意， 在wait前需要先acquire一个锁，然后wait需要传入该lock对象作为参数，在wait时会自动释放该锁（由于unique_lock自身自带lock, unlock操作，因此适合用在这里，lock_guard没有，不行） 当其它线程使用notify_xxx对其唤醒时，wait会再次恢复lock，恢复wait前的状态。
+唤醒操作有notify_one和notify_all。当存在多条wait线程时，notify_one唤醒的线程是随机的。
+std::condition_variable_any  wait可以接受任意lockable对象
+此外，std::notify_all_at_thread_exit(cv对象, mutex对象)的调用，可以在该线程退出时唤醒所有cv对象上的wait线程。（等同于执行操作lk.unlock(), cv.notify_all())
+
+mutex系列代表互斥区，condition系列代表信号量。两者在一定程度上可以互相替代，区别在于一些细节：mut等待之后只有（自己）抢占到资源才能解开，sem等待之后需要（别人）执行唤醒才能解开。sem管理的是资源的数量，mut管理的是资源的所有权。
